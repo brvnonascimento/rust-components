@@ -9,12 +9,22 @@ use sqlx::postgres::PgPoolOptions;
 enum Children {
     String(String),
     Function(fn(children: Children) -> String),
+    Vec(Vec<Children>),
 }
 
 fn resolve_children(children: Children) -> String {
     match children {
         Children::String(s) => s,
         Children::Function(f) => f(Children::String("".to_string())),
+        Children::Vec(v) => {
+            let mut result = String::new();
+
+            for child in v {
+                result.push_str(&resolve_children(child));
+            }
+
+            result
+        }
     }
 }
 
@@ -46,12 +56,6 @@ fn heading(children: Children) -> String {
 async fn main() {
     dotenv().ok();
 
-    let page = layout(Children::Function(|_children| {
-        heading(Children::Function(|_| {
-            "Hello world from a component v2!".to_string()
-        }))
-    }));
-
     let db = PgPoolOptions::new()
         .max_connections(50)
         .connect(dotenv!("DATABASE_URL"))
@@ -59,7 +63,7 @@ async fn main() {
 
     match db {
         Ok(db) => {
-            println!("Connected to database: {}", dotenv!("POSTGRES_DB"));
+            println!("Connected to database!");
 
             let migration = sqlx::migrate!().run(&db).await;
 
@@ -70,6 +74,28 @@ async fn main() {
                     return;
                 }
             }
+
+            let users = sqlx::query!(
+                r#"
+                    SELECT * from "user"
+                "#
+            )
+            .fetch_all(&db)
+            .await
+            .unwrap();
+
+            let mut user = String::new();
+
+            for u in users {
+                user.push_str(&format!("{}<br>", u.name));
+            }
+
+            let page = layout(Children::Vec(vec![
+                Children::Function(|_children| {
+                    heading(Children::Function(|_| "Users".to_string()))
+                }),
+                Children::String(user),
+            ]));
 
             let app = Router::new()
                 .route("/", get(|| async { Html(page) }))
