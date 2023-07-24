@@ -2,9 +2,9 @@
 extern crate dotenv_codegen;
 
 use axum::{response::Html, routing::get, Extension, Router};
-use dotenv::dotenv;
-use html_to_string_macro::html;
+use hyperide::{htmx::include_htmx, hyperide, tailwind::include_tailwind};
 use sqlx::postgres::PgPoolOptions;
+use std::net::SocketAddr;
 
 enum Children {
     String(String),
@@ -29,14 +29,19 @@ fn resolve_children(children: Children) -> String {
 }
 
 fn layout(children: Children) -> String {
-    html! {
+    hyperide! {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>"rust components"</title>
+          <title>rust components</title>
+
+          { include_tailwind!() }
+          { include_htmx!() }
         </head>
         <body>
-          <div style="display: flex; flex-direction: column; align-items: center">
+          <div
+            class="container mx-auto px-4 py-4 bg-gray-100 rounded-lg shadow-lg"
+          >
             {resolve_children(children)}
           </div>
         </body>
@@ -45,7 +50,7 @@ fn layout(children: Children) -> String {
 }
 
 fn heading(children: Children) -> String {
-    html! {
+    hyperide! {
       <h1>
         {resolve_children(children)}
       </h1>
@@ -54,8 +59,6 @@ fn heading(children: Children) -> String {
 
 #[tokio::main]
 async fn main() {
-    dotenv().ok();
-
     let db = PgPoolOptions::new()
         .max_connections(50)
         .connect(dotenv!("DATABASE_URL"))
@@ -101,22 +104,15 @@ async fn main() {
                 .route("/", get(|| async { Html(page) }))
                 .layer(Extension(db));
 
-            let address = &"0.0.0.0:3100".parse();
+            let address = SocketAddr::from(([127, 0, 0, 1], 3000));
 
-            match address {
-                Ok(address) => {
-                    let server = axum::Server::bind(address)
-                        .serve(app.into_make_service())
-                        .await;
+            let server = axum::Server::bind(&address)
+                .serve(app.into_make_service())
+                .await;
 
-                    match server {
-                        Ok(_) => println!("Server started on port 3100"),
-                        Err(e) => println!("Failed to start server: {}", e),
-                    }
-                }
-                Err(e) => {
-                    println!("Failed to parse address: {}", e);
-                }
+            match server {
+                Ok(_) => println!("Server started on port 3100"),
+                Err(e) => println!("Failed to start server: {}", e),
             }
         }
         Err(e) => {
